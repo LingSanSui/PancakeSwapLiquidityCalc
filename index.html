@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PancakeSwap V3 流动性计算器</title>
+    <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #ff6b6b, #ffa500);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .status-panel {
+            background: #f8f9ff;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 30px;
+            border-left: 4px solid #4CAF50;
+        }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 15px;
+        }
+
+        .status-item {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .status-item label {
+            font-weight: bold;
+            color: #555;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .status-item .value {
+            font-size: 1.2em;
+            color: #333;
+            font-weight: bold;
+        }
+
+        .price-display {
+            font-size: 1.5em;
+            color: #2196F3;
+        }
+
+        .input-section {
+            background: #fff;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 20px;
+            border: 2px solid #e0e0e0;
+        }
+
+        .input-section h3 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.3em;
+        }
+
+        .input-group {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .input-field {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .input-field label {
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #555;
+        }
+
+        .input-field input {
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+
+        .input-field input:focus {
+            outline: none;
+            border-color: #2196F3;
+        }
+
+        .calc-button {
+            background: linear-gradient(135deg, #4CAF50, #45a049);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-size: 1.1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            width: 100%;
+        }
+
+        .calc-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+        }
+
+        .calc-button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .results {
+            background: #f0f8ff;
+            border-radius: 12px;
+            padding: 25px;
+            border-left: 4px solid #2196F3;
+        }
+
+        .results h3 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.3em;
+        }
+
+        .result-item {
+            background: white;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .result-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .result-label {
+            font-weight: bold;
+            color: #555;
+            margin-bottom: 5px;
+        }
+
+        .result-value {
+            font-size: 1.1em;
+            color: #2196F3;
+            font-weight: bold;
+        }
+
+        .loading {
+            text-align: center;
+            color: #666;
+            font-style: italic;
+        }
+
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #f44336;
+        }
+
+        .update-time {
+            text-align: center;
+            color: #666;
+            font-size: 0.9em;
+            margin-top: 10px;
+        }
+
+        @media (max-width: 600px) {
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .content {
+                padding: 20px;
+            }
+            
+            .input-group {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🥞 PancakeSwap V3</h1>
+            <p>USDT/ZK 流动性池计算器</p>
+        </div>
+        
+        <div class="content">
+            <div id="errorMsg" class="error" style="display: none;"></div>
+            
+            <div class="status-panel">
+                <h3>🔄 实时池子信息</h3>
+                <div class="status-grid">
+                    <div class="status-item">
+                        <label>当前价格 (USDT/ZK)</label>
+                        <div id="currentPrice" class="value price-display">加载中...</div>
+                    </div>
+                    <div class="status-item">
+                        <label>当前 Tick</label>
+                        <div id="currentTick" class="value">加载中...</div>
+                    </div>
+                    <div class="status-item">
+                        <label>Tick 区间</label>
+                        <div id="tickRange" class="value">加载中...</div>
+                    </div>
+                    <div class="status-item">
+                        <label>区间价格范围</label>
+                        <div id="priceRange" class="value">加载中...</div>
+                    </div>
+                </div>
+                <div class="update-time" id="updateTime">更新时间: --</div>
+            </div>
+
+            <div class="input-section">
+                <h3>💰 流动性计算</h3>
+                <div class="input-group">
+                    <div class="input-field">
+                        <label for="usdtAmount">USDT 数量</label>
+                        <input type="number" id="usdtAmount" placeholder="输入 USDT 数量" step="0.000001">
+                    </div>
+                    <div class="input-field">
+                        <label for="zkAmount">ZK 数量</label>
+                        <input type="number" id="zkAmount" placeholder="输入 ZK 数量" step="0.000001">
+                    </div>
+                </div>
+                <button class="calc-button" onclick="calculateLiquidity()">🧮 计算流动性</button>
+            </div>
+
+            <div class="results" id="results" style="display: none;">
+                <h3>📊 计算结果</h3>
+                <div id="resultsContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 合约地址和ABI
+        const USDT_ADDRESS = '0x55d398326f99059fF775485246999027B3197955';
+        const ZK_ADDRESS = '0xC71B5F631354BE6853eFe9C3Ab6b9590F8302e81';
+        
+        // BSC RPC URL
+        const RPC_URL = 'https://bsc-dataseed1.binance.org/';
+        
+        // UniswapV3Pool ABI (简化版)
+        const POOL_ABI = [
+            "function slot0() external view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)",
+            "function tickSpacing() external view returns (int24)",
+            "function fee() external view returns (uint24)",
+            "function token0() external view returns (address)",
+            "function token1() external view returns (address)"
+        ];
+
+        // PancakeSwap V3 Factory ABI
+        const FACTORY_ABI = [
+            "function getPool(address tokenA, address tokenB, uint24 fee) external view returns (address pool)"
+        ];
+
+        // ERC20 ABI for decimals
+        const ERC20_ABI = [
+            "function decimals() external view returns (uint8)"
+        ];
+
+        const FACTORY_ADDRESS = '0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865'; // PancakeSwap V3 Factory
+
+        let provider;
+        let poolContract;
+        let currentPoolData = {};
+        let updateInterval;
+        let token0Address, token1Address;
+        let token0Decimals, token1Decimals;
+        let isToken0USDT = false;
+
+        // 初始化
+        async function init() {
+            try {
+                provider = new ethers.providers.JsonRpcProvider(RPC_URL);
+                
+                // 获取池子地址
+                const factoryContract = new ethers.Contract(FACTORY_ADDRESS, FACTORY_ABI, provider);
+                const poolAddress = await factoryContract.getPool(USDT_ADDRESS, ZK_ADDRESS, 100); // 0.01% = 100
+                
+                if (poolAddress === '0x0000000000000000000000000000000000000000') {
+                    throw new Error('USDT/ZK 0.01% 池子不存在');
+                }
+                
+                poolContract = new ethers.Contract(poolAddress, POOL_ABI, provider);
+                
+                // 获取token0和token1地址
+                token0Address = await poolContract.token0();
+                token1Address = await poolContract.token1();
+                
+                // 确定USDT是token0还是token1
+                isToken0USDT = token0Address.toLowerCase() === USDT_ADDRESS.toLowerCase();
+                
+                // 获取token精度
+                const token0Contract = new ethers.Contract(token0Address, ERC20_ABI, provider);
+                const token1Contract = new ethers.Contract(token1Address, ERC20_ABI, provider);
+                token0Decimals = await token0Contract.decimals();
+                token1Decimals = await token1Contract.decimals();
+                
+                console.log('池子地址:', poolAddress);
+                console.log('Token0:', token0Address, '精度:', token0Decimals);
+                console.log('Token1:', token1Address, '精度:', token1Decimals);
+                console.log('USDT是Token0:', isToken0USDT);
+                
+                // 开始定期更新
+                await updatePoolData();
+                updateInterval = setInterval(updatePoolData, 2500); // 每2.5秒更新
+                
+            } catch (error) {
+                console.error('初始化错误:', error);
+                showError('初始化失败: ' + error.message);
+            }
+        }
+
+        // 更新池子数据
+        async function updatePoolData() {
+            try {
+                const slot0 = await poolContract.slot0();
+                const tickSpacing = await poolContract.tickSpacing();
+                
+                const sqrtPriceX96 = slot0.sqrtPriceX96;
+                const currentTick = slot0.tick;
+                
+                // 计算当前价格
+                const price = calculatePrice(sqrtPriceX96);
+                
+                // 计算tick区间
+                const { lowerTick, upperTick } = getTickRange(currentTick, tickSpacing);
+                
+                // 计算区间价格
+                const lowerPrice = getTickPrice(lowerTick);
+                const upperPrice = getTickPrice(upperTick);
+                
+                // 转换为USDT/ZK价格格式
+                const currentUsdtZkPrice = isToken0USDT ? 1/price : price;
+                const lowerUsdtZkPrice = isToken0USDT ? 1/lowerPrice : lowerPrice;
+                const upperUsdtZkPrice = isToken0USDT ? 1/upperPrice : upperPrice;
+                
+                // 更新显示
+                document.getElementById('currentPrice').textContent = currentUsdtZkPrice.toFixed(6);
+                document.getElementById('currentTick').textContent = currentTick.toString();
+                document.getElementById('tickRange').textContent = `${lowerTick} ~ ${upperTick}`;
+                document.getElementById('priceRange').textContent = `${Math.min(lowerUsdtZkPrice, upperUsdtZkPrice).toFixed(6)} ~ ${Math.max(lowerUsdtZkPrice, upperUsdtZkPrice).toFixed(6)}`;
+                document.getElementById('updateTime').textContent = `更新时间: ${new Date().toLocaleTimeString()}`;
+                
+                // 保存当前数据
+                currentPoolData = {
+                    sqrtPriceX96,
+                    currentTick,
+                    tickSpacing,
+                    lowerTick,
+                    upperTick,
+                    price: currentUsdtZkPrice,
+                    lowerPrice: Math.min(lowerUsdtZkPrice, upperUsdtZkPrice),
+                    upperPrice: Math.max(lowerUsdtZkPrice, upperUsdtZkPrice),
+                    rawPrice: price,
+                    rawLowerPrice: lowerPrice,
+                    rawUpperPrice: upperPrice
+                };
+                
+                hideError();
+                
+            } catch (error) {
+                console.error('更新数据错误:', error);
+                showError('获取池子数据失败: ' + error.message);
+            }
+        }
+
+        // 计算价格从 sqrtPriceX96
+        function calculatePrice(sqrtPriceX96) {
+            // 将 sqrtPriceX96 转换为价格
+            const Q96 = Math.pow(2, 96);
+            const price = Math.pow(sqrtPriceX96.toString() / Q96, 2);
+            
+            // 调整小数位数差异
+            const decimalAdjustment = Math.pow(10, token1Decimals - token0Decimals);
+            
+            return price * decimalAdjustment;
+        }
+
+        // 从tick计算价格
+        function getTickPrice(tick) {
+            const price = Math.pow(1.0001, tick);
+            // 调整小数位数差异
+            const decimalAdjustment = Math.pow(10, token1Decimals - token0Decimals);
+            return price * decimalAdjustment;
+        }
+
+        // 获取tick区间
+        function getTickRange(currentTick, tickSpacing) {
+            const lowerTick = Math.floor(currentTick / tickSpacing) * tickSpacing;
+            const upperTick = lowerTick + tickSpacing;
+            return { lowerTick, upperTick };
+        }
+
+        // 计算流动性
+        function calculateLiquidity() {
+            const usdtAmount = parseFloat(document.getElementById('usdtAmount').value) || 0;
+            const zkAmount = parseFloat(document.getElementById('zkAmount').value) || 0;
+            
+            if (!currentPoolData.price) {
+                showError('请等待池子数据加载完成');
+                return;
+            }
+            
+            if (usdtAmount === 0 && zkAmount === 0) {
+                showError('请输入 USDT 或 ZK 数量');
+                return;
+            }
+            
+            const results = [];
+            
+            // 当前价格和tick区间
+            const currentPrice = currentPoolData.price; // USDT/ZK price
+            const lowerPrice = currentPoolData.lowerPrice;
+            const upperPrice = currentPoolData.upperPrice;
+            
+            // V3流动性计算：在价格区间内计算所需的代币比例
+            const sqrtCurrentPrice = Math.sqrt(currentPrice);
+            const sqrtLowerPrice = Math.sqrt(lowerPrice);
+            const sqrtUpperPrice = Math.sqrt(upperPrice);
+            
+            // 情况1: 如果只有USDT
+            if (usdtAmount > 0 && zkAmount === 0) {
+                // 计算在当前tick区间内需要的ZK数量
+                let neededZkAmount, usdtForLiquidity, zkForLiquidity;
+                
+                if (currentPrice <= lowerPrice) {
+                    // 价格在区间下方，只需要ZK
+                    neededZkAmount = usdtAmount / lowerPrice;
+                    usdtForLiquidity = 0;
+                    zkForLiquidity = neededZkAmount;
+                } else if (currentPrice >= upperPrice) {
+                    // 价格在区间上方，只需要USDT
+                    neededZkAmount = 0;
+                    usdtForLiquidity = usdtAmount;
+                    zkForLiquidity = 0;
+                } else {
+                    // 价格在区间内，需要计算比例
+                    const ratio = (sqrtCurrentPrice - sqrtLowerPrice) / (sqrtUpperPrice - sqrtLowerPrice);
+                    const usdtRatio = ratio;
+                    const zkRatio = 1 - ratio;
+                    
+                    if (zkRatio > 0) {
+                        neededZkAmount = (usdtAmount * zkRatio) / (currentPrice * usdtRatio);
+                        usdtForLiquidity = usdtAmount * usdtRatio;
+                        zkForLiquidity = neededZkAmount;
+                    } else {
+                        neededZkAmount = 0;
+                        usdtForLiquidity = usdtAmount;
+                        zkForLiquidity = 0;
+                    }
+                }
+                
+                results.push({
+                    label: '需要购买的 ZK 数量',
+                    value: `${neededZkAmount.toFixed(6)} ZK`
+                });
+                results.push({
+                    label: '需要用于购买 ZK 的 USDT',
+                    value: `${(neededZkAmount * currentPrice).toFixed(6)} USDT`
+                });
+                results.push({
+                    label: '添加流动性的 USDT',
+                    value: `${usdtForLiquidity.toFixed(6)} USDT`
+                });
+                results.push({
+                    label: '添加流动性的 ZK',
+                    value: `${zkForLiquidity.toFixed(6)} ZK`
+                });
+            }
+            
+            // 情况2: 如果只有ZK
+            else if (zkAmount > 0 && usdtAmount === 0) {
+                let neededUsdtAmount, usdtForLiquidity, zkForLiquidity;
+                
+                if (currentPrice <= lowerPrice) {
+                    // 价格在区间下方，只需要ZK
+                    neededUsdtAmount = 0;
+                    usdtForLiquidity = 0;
+                    zkForLiquidity = zkAmount;
+                } else if (currentPrice >= upperPrice) {
+                    // 价格在区间上方，只需要USDT
+                    neededUsdtAmount = zkAmount * upperPrice;
+                    usdtForLiquidity = neededUsdtAmount;
+                    zkForLiquidity = 0;
+                } else {
+                    // 价格在区间内
+                    const ratio = (sqrtCurrentPrice - sqrtLowerPrice) / (sqrtUpperPrice - sqrtLowerPrice);
+                    const usdtRatio = ratio;
+                    const zkRatio = 1 - ratio;
+                    
+                    if (usdtRatio > 0) {
+                        neededUsdtAmount = (zkAmount * usdtRatio * currentPrice) / zkRatio;
+                        usdtForLiquidity = neededUsdtAmount;
+                        zkForLiquidity = zkAmount * zkRatio;
+                    } else {
+                        neededUsdtAmount = 0;
+                        usdtForLiquidity = 0;
+                        zkForLiquidity = zkAmount;
+                    }
+                }
+                
+                results.push({
+                    label: '需要出售的 ZK 数量获得 USDT',
+                    value: `${(neededUsdtAmount / currentPrice).toFixed(6)} ZK`
+                });
+                results.push({
+                    label: '出售 ZK 获得的 USDT',
+                    value: `${neededUsdtAmount.toFixed(6)} USDT`
+                });
+                results.push({
+                    label: '添加流动性的 USDT',
+                    value: `${usdtForLiquidity.toFixed(6)} USDT`
+                });
+                results.push({
+                    label: '添加流动性的 ZK',
+                    value: `${zkForLiquidity.toFixed(6)} ZK`
+                });
+            }
+            
+            // 情况3: 如果同时有USDT和ZK
+            else if (usdtAmount > 0 && zkAmount > 0) {
+                const ratio = (sqrtCurrentPrice - sqrtLowerPrice) / (sqrtUpperPrice - sqrtLowerPrice);
+                const usdtRatio = Math.max(0, Math.min(1, ratio));
+                const zkRatio = 1 - usdtRatio;
+                
+                // 计算最优比例
+                const optimalZkForUsdt = usdtRatio > 0 ? (usdtAmount * zkRatio) / (currentPrice * usdtRatio) : 0;
+                const optimalUsdtForZk = zkRatio > 0 ? (zkAmount * usdtRatio * currentPrice) / zkRatio : 0;
+                
+                if (zkAmount > optimalZkForUsdt && optimalZkForUsdt > 0) {
+                    // ZK过多
+                    const excessZk = zkAmount - optimalZkForUsdt;
+                    results.push({
+                        label: '建议出售的多余 ZK',
+                        value: `${excessZk.toFixed(6)} ZK`
+                    });
+                } else if (usdtAmount > optimalUsdtForZk && optimalUsdtForZk > 0) {
+                    // USDT过多
+                    const excessUsdt = usdtAmount - optimalUsdtForZk;
+                    results.push({
+                        label: '建议用多余 USDT 购买 ZK',
+                        value: `${(excessUsdt / currentPrice).toFixed(6)} ZK (需要 ${excessUsdt.toFixed(6)} USDT)`
+                    });
+                }
+                
+                const liquidityUsdt = Math.min(usdtAmount, optimalUsdtForZk || usdtAmount);
+                const liquidityZk = Math.min(zkAmount, optimalZkForUsdt || zkAmount);
+                
+                results.push({
+                    label: '可添加流动性的 USDT',
+                    value: `${liquidityUsdt.toFixed(6)} USDT`
+                });
+                results.push({
+                    label: '可添加流动性的 ZK',
+                    value: `${liquidityZk.toFixed(6)} ZK`
+                });
+            }
+            
+            // 添加当前价格信息
+            results.unshift({
+                label: '当前 USDT/ZK 价格',
+                value: `${currentPoolData.price.toFixed(6)}`
+            });
+            
+            results.unshift({
+                label: 'Tick 区间价格范围',
+                value: `${currentPoolData.lowerPrice.toFixed(6)} ~ ${currentPoolData.upperPrice.toFixed(6)}`
+            });
+            
+            displayResults(results);
+        }
+
+        // 显示结果
+        function displayResults(results) {
+            const resultsDiv = document.getElementById('results');
+            const contentDiv = document.getElementById('resultsContent');
+            
+            let html = '';
+            results.forEach(result => {
+                html += `
+                    <div class="result-item">
+                        <div class="result-label">${result.label}</div>
+                        <div class="result-value">${result.value}</div>
+                    </div>
+                `;
+            });
+            
+            contentDiv.innerHTML = html;
+            resultsDiv.style.display = 'block';
+        }
+
+        // 显示错误
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMsg');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+
+        // 隐藏错误
+        function hideError() {
+            document.getElementById('errorMsg').style.display = 'none';
+        }
+
+        // 页面加载完成后初始化
+        window.addEventListener('load', init);
+        
+        // 页面关闭时清理定时器
+        window.addEventListener('beforeunload', () => {
+            if (updateInterval) {
+                clearInterval(updateInterval);
+            }
+        });
+    </script>
+</body>
+</html> 
