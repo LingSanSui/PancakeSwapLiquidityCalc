@@ -135,6 +135,42 @@
             border-color: #2196F3;
         }
 
+        .input-with-clear {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .input-with-clear input {
+            flex: 1;
+            padding-right: 40px;
+        }
+
+        .clear-btn {
+            position: absolute;
+            right: 8px;
+            background: #ff6b6b;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.3s;
+        }
+
+        .clear-btn:hover {
+            background: #ff5252;
+        }
+
+        .clear-btn:active {
+            transform: scale(0.95);
+        }
+
         .calc-button {
             background: linear-gradient(135deg, #4CAF50, #45a049);
             color: white;
@@ -272,11 +308,17 @@
                 <div class="input-group">
                     <div class="input-field">
                         <label for="usdtAmount">USDT 数量</label>
-                        <input type="number" id="usdtAmount" placeholder="输入 USDT 数量" step="0.000001">
+                        <div class="input-with-clear">
+                            <input type="number" id="usdtAmount" placeholder="输入 USDT 数量" step="0.000001">
+                            <button class="clear-btn" onclick="clearInput('usdtAmount')" title="清除">✖</button>
+                        </div>
                     </div>
                     <div class="input-field">
                         <label for="zkAmount">ZK 数量</label>
-                        <input type="number" id="zkAmount" placeholder="输入 ZK 数量" step="0.000001">
+                        <div class="input-with-clear">
+                            <input type="number" id="zkAmount" placeholder="输入 ZK 数量" step="0.000001">
+                            <button class="clear-btn" onclick="clearInput('zkAmount')" title="清除">✖</button>
+                        </div>
                     </div>
                 </div>
                 <button class="calc-button" onclick="calculateLiquidity()">🧮 计算流动性</button>
@@ -295,8 +337,8 @@
         const ZK_ADDRESS = '0xC71B5F631354BE6853eFe9C3Ab6b9590F8302e81';
         
         // BSC RPC URL
+        // const RPC_URL = 'https://bsc-dataseed1.binance.org/';
         const RPC_URL = 'https://pancake-bnb.rpc.blxrbdn.com';
-        
         // UniswapV3Pool ABI (简化版)
         const POOL_ABI = [
             "function slot0() external view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)",
@@ -477,141 +519,179 @@
             const sqrtLowerPrice = Math.sqrt(lowerPrice);
             const sqrtUpperPrice = Math.sqrt(upperPrice);
             
-            // 情况1: 如果只有USDT
+            // 情况1: 如果只有USDT（将全部USDT用于添加流动性）
             if (usdtAmount > 0 && zkAmount === 0) {
-                // 计算在当前tick区间内需要的ZK数量
-                let neededZkAmount, usdtForLiquidity, zkForLiquidity;
+                let neededZkAmount = 0;
+                let swapUsdtAmount = 0;
+                let finalUsdtForLiquidity = 0;
+                let finalZkForLiquidity = 0;
                 
                 if (currentPrice <= lowerPrice) {
-                    // 价格在区间下方，只需要ZK
-                    neededZkAmount = usdtAmount / lowerPrice;
-                    usdtForLiquidity = 0;
-                    zkForLiquidity = neededZkAmount;
+                    // 价格在区间下方，需要全部换成ZK
+                    neededZkAmount = usdtAmount / currentPrice;
+                    swapUsdtAmount = usdtAmount;
+                    finalUsdtForLiquidity = 0;
+                    finalZkForLiquidity = neededZkAmount;
                 } else if (currentPrice >= upperPrice) {
-                    // 价格在区间上方，只需要USDT
+                    // 价格在区间上方，全部USDT用于流动性
                     neededZkAmount = 0;
-                    usdtForLiquidity = usdtAmount;
-                    zkForLiquidity = 0;
+                    swapUsdtAmount = 0;
+                    finalUsdtForLiquidity = usdtAmount;
+                    finalZkForLiquidity = 0;
                 } else {
-                    // 价格在区间内，需要计算比例
+                    // 价格在区间内，计算最优分配
                     const ratio = (sqrtCurrentPrice - sqrtLowerPrice) / (sqrtUpperPrice - sqrtLowerPrice);
                     const usdtRatio = ratio;
                     const zkRatio = 1 - ratio;
                     
-                    if (zkRatio > 0) {
-                        neededZkAmount = (usdtAmount * zkRatio) / (currentPrice * usdtRatio);
-                        usdtForLiquidity = usdtAmount * usdtRatio;
-                        zkForLiquidity = neededZkAmount;
-                    } else {
-                        neededZkAmount = 0;
-                        usdtForLiquidity = usdtAmount;
-                        zkForLiquidity = 0;
-                    }
+                    // 计算需要的总价值中USDT和ZK的比例
+                    const totalValueInUsdt = usdtAmount;
+                    finalUsdtForLiquidity = totalValueInUsdt * usdtRatio;
+                    const zkValueNeeded = totalValueInUsdt * zkRatio;
+                    finalZkForLiquidity = zkValueNeeded / currentPrice;
+                    
+                    // 需要用多少USDT买ZK
+                    swapUsdtAmount = zkValueNeeded;
+                    neededZkAmount = finalZkForLiquidity;
                 }
                 
+                results.push({
+                    label: '总USDT资产',
+                    value: `${usdtAmount.toFixed(6)} USDT`
+                });
                 results.push({
                     label: '需要购买的 ZK 数量',
                     value: `${neededZkAmount.toFixed(6)} ZK`
                 });
                 results.push({
-                    label: '需要用于购买 ZK 的 USDT',
-                    value: `${(neededZkAmount * currentPrice).toFixed(6)} USDT`
+                    label: '用于购买 ZK 的 USDT',
+                    value: `${swapUsdtAmount.toFixed(6)} USDT`
                 });
                 results.push({
-                    label: '添加流动性的 USDT',
-                    value: `${usdtForLiquidity.toFixed(6)} USDT`
+                    label: '最终添加流动性的 USDT',
+                    value: `${finalUsdtForLiquidity.toFixed(6)} USDT`
                 });
                 results.push({
-                    label: '添加流动性的 ZK',
-                    value: `${zkForLiquidity.toFixed(6)} ZK`
+                    label: '最终添加流动性的 ZK',
+                    value: `${finalZkForLiquidity.toFixed(6)} ZK`
                 });
             }
             
-            // 情况2: 如果只有ZK
+            // 情况2: 如果只有ZK（将全部ZK用于添加流动性）
             else if (zkAmount > 0 && usdtAmount === 0) {
-                let neededUsdtAmount, usdtForLiquidity, zkForLiquidity;
+                let neededUsdtAmount = 0;
+                let swapZkAmount = 0;
+                let finalUsdtForLiquidity = 0;
+                let finalZkForLiquidity = 0;
                 
                 if (currentPrice <= lowerPrice) {
-                    // 价格在区间下方，只需要ZK
+                    // 价格在区间下方，全部ZK用于流动性
                     neededUsdtAmount = 0;
-                    usdtForLiquidity = 0;
-                    zkForLiquidity = zkAmount;
+                    swapZkAmount = 0;
+                    finalUsdtForLiquidity = 0;
+                    finalZkForLiquidity = zkAmount;
                 } else if (currentPrice >= upperPrice) {
-                    // 价格在区间上方，只需要USDT
-                    neededUsdtAmount = zkAmount * upperPrice;
-                    usdtForLiquidity = neededUsdtAmount;
-                    zkForLiquidity = 0;
+                    // 价格在区间上方，需要全部换成USDT
+                    neededUsdtAmount = zkAmount * currentPrice;
+                    swapZkAmount = zkAmount;
+                    finalUsdtForLiquidity = neededUsdtAmount;
+                    finalZkForLiquidity = 0;
                 } else {
-                    // 价格在区间内
+                    // 价格在区间内，计算最优分配
                     const ratio = (sqrtCurrentPrice - sqrtLowerPrice) / (sqrtUpperPrice - sqrtLowerPrice);
                     const usdtRatio = ratio;
                     const zkRatio = 1 - ratio;
                     
-                    if (usdtRatio > 0) {
-                        neededUsdtAmount = (zkAmount * usdtRatio * currentPrice) / zkRatio;
-                        usdtForLiquidity = neededUsdtAmount;
-                        zkForLiquidity = zkAmount * zkRatio;
-                    } else {
-                        neededUsdtAmount = 0;
-                        usdtForLiquidity = 0;
-                        zkForLiquidity = zkAmount;
-                    }
+                    // 计算需要的总价值中USDT和ZK的比例
+                    const totalValueInUsdt = zkAmount * currentPrice;
+                    finalUsdtForLiquidity = totalValueInUsdt * usdtRatio;
+                    finalZkForLiquidity = totalValueInUsdt * zkRatio / currentPrice;
+                    
+                    // 需要卖出多少ZK换USDT
+                    swapZkAmount = zkAmount - finalZkForLiquidity;
+                    neededUsdtAmount = finalUsdtForLiquidity;
                 }
                 
                 results.push({
-                    label: '需要出售的 ZK 数量获得 USDT',
-                    value: `${(neededUsdtAmount / currentPrice).toFixed(6)} ZK`
+                    label: '总ZK资产',
+                    value: `${zkAmount.toFixed(6)} ZK`
+                });
+                results.push({
+                    label: '需要出售的 ZK 数量',
+                    value: `${swapZkAmount.toFixed(6)} ZK`
                 });
                 results.push({
                     label: '出售 ZK 获得的 USDT',
                     value: `${neededUsdtAmount.toFixed(6)} USDT`
                 });
                 results.push({
-                    label: '添加流动性的 USDT',
-                    value: `${usdtForLiquidity.toFixed(6)} USDT`
+                    label: '最终添加流动性的 USDT',
+                    value: `${finalUsdtForLiquidity.toFixed(6)} USDT`
                 });
                 results.push({
-                    label: '添加流动性的 ZK',
-                    value: `${zkForLiquidity.toFixed(6)} ZK`
+                    label: '最终添加流动性的 ZK',
+                    value: `${finalZkForLiquidity.toFixed(6)} ZK`
                 });
             }
             
-            // 情况3: 如果同时有USDT和ZK
+            // 情况3: 如果同时有USDT和ZK（将全部资产用于添加流动性）
             else if (usdtAmount > 0 && zkAmount > 0) {
                 const ratio = (sqrtCurrentPrice - sqrtLowerPrice) / (sqrtUpperPrice - sqrtLowerPrice);
                 const usdtRatio = Math.max(0, Math.min(1, ratio));
                 const zkRatio = 1 - usdtRatio;
                 
-                // 计算最优比例
-                const optimalZkForUsdt = usdtRatio > 0 ? (usdtAmount * zkRatio) / (currentPrice * usdtRatio) : 0;
-                const optimalUsdtForZk = zkRatio > 0 ? (zkAmount * usdtRatio * currentPrice) / zkRatio : 0;
+                // 计算总资产价值（以USDT计算）
+                const totalValueInUsdt = usdtAmount + zkAmount * currentPrice;
                 
-                if (zkAmount > optimalZkForUsdt && optimalZkForUsdt > 0) {
-                    // ZK过多
-                    const excessZk = zkAmount - optimalZkForUsdt;
+                // 计算最优分配
+                const optimalUsdtAmount = totalValueInUsdt * usdtRatio;
+                const optimalZkAmount = totalValueInUsdt * zkRatio / currentPrice;
+                
+                // 计算需要的交换
+                const usdtDiff = optimalUsdtAmount - usdtAmount;
+                const zkDiff = optimalZkAmount - zkAmount;
+                
+                results.push({
+                    label: '总资产价值',
+                    value: `${totalValueInUsdt.toFixed(6)} USDT`
+                });
+                
+                if (usdtDiff > 0) {
+                    // 需要更多USDT，卖出ZK
+                    const zkToSell = Math.abs(zkDiff);
                     results.push({
-                        label: '建议出售的多余 ZK',
-                        value: `${excessZk.toFixed(6)} ZK`
+                        label: '需要出售的 ZK',
+                        value: `${zkToSell.toFixed(6)} ZK`
                     });
-                } else if (usdtAmount > optimalUsdtForZk && optimalUsdtForZk > 0) {
-                    // USDT过多
-                    const excessUsdt = usdtAmount - optimalUsdtForZk;
                     results.push({
-                        label: '建议用多余 USDT 购买 ZK',
-                        value: `${(excessUsdt / currentPrice).toFixed(6)} ZK (需要 ${excessUsdt.toFixed(6)} USDT)`
+                        label: '获得的 USDT',
+                        value: `${(zkToSell * currentPrice).toFixed(6)} USDT`
+                    });
+                } else if (zkDiff > 0) {
+                    // 需要更多ZK，用USDT购买
+                    const usdtToSpend = Math.abs(usdtDiff);
+                    results.push({
+                        label: '用于购买 ZK 的 USDT',
+                        value: `${usdtToSpend.toFixed(6)} USDT`
+                    });
+                    results.push({
+                        label: '购买的 ZK 数量',
+                        value: `${zkDiff.toFixed(6)} ZK`
+                    });
+                } else {
+                    results.push({
+                        label: '资产比例已最优',
+                        value: '无需交换'
                     });
                 }
                 
-                const liquidityUsdt = Math.min(usdtAmount, optimalUsdtForZk || usdtAmount);
-                const liquidityZk = Math.min(zkAmount, optimalZkForUsdt || zkAmount);
-                
                 results.push({
-                    label: '可添加流动性的 USDT',
-                    value: `${liquidityUsdt.toFixed(6)} USDT`
+                    label: '最终添加流动性的 USDT',
+                    value: `${optimalUsdtAmount.toFixed(6)} USDT`
                 });
                 results.push({
-                    label: '可添加流动性的 ZK',
-                    value: `${liquidityZk.toFixed(6)} ZK`
+                    label: '最终添加流动性的 ZK',
+                    value: `${optimalZkAmount.toFixed(6)} ZK`
                 });
             }
             
@@ -658,6 +738,13 @@
         // 隐藏错误
         function hideError() {
             document.getElementById('errorMsg').style.display = 'none';
+        }
+
+        // 清除输入框
+        function clearInput(inputId) {
+            document.getElementById(inputId).value = '';
+            // 隐藏结果
+            document.getElementById('results').style.display = 'none';
         }
 
         // 页面加载完成后初始化
